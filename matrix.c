@@ -8,6 +8,20 @@
 #include <stdio.h>
 #include <string.h>
 
+/* SIMD头文件 - 根据编译器支持情况选择 */
+#if defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86)
+    #include <immintrin.h>  /* AVX/SSE指令集 */
+    #define SIMD_SUPPORTED 1
+    #define SIMD_ALIGNMENT 32  /* AVX需要32字节对齐 */
+#elif defined(__ARM_NEON) || defined(__ARM_NEON__)
+    #include <arm_neon.h>   /* ARM NEON指令集 */
+    #define SIMD_SUPPORTED 1
+    #define SIMD_ALIGNMENT 16  /* NEON需要16字节对齐 */
+#else
+    #define SIMD_SUPPORTED 0
+    #define SIMD_ALIGNMENT 16
+#endif
+
 /**
  * @brief 计算矩阵元素索引
  * @param m 矩阵指针
@@ -151,6 +165,31 @@ ERROR_ID matrix_add(_IN MATRIX *A, _IN MATRIX *B, _OUT MATRIX **C, MEMSTACK *ms)
     if (!R) return e;
     size_t n = A->rows * A->cols;
     
+#if SIMD_SUPPORTED && (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))
+    /* AVX SIMD优化 - 每次处理4个双精度浮点数 */
+    size_t k;
+    for (k = 0; k + 3 < n; k += 4) {
+        __m256d a_vec = _mm256_loadu_pd(&A->data[k]);
+        __m256d b_vec = _mm256_loadu_pd(&B->data[k]);
+        __m256d r_vec = _mm256_add_pd(a_vec, b_vec);
+        _mm256_storeu_pd(&R->data[k], r_vec);
+    }
+    for (; k < n; k++) {
+        R->data[k] = A->data[k] + B->data[k];
+    }
+#elif SIMD_SUPPORTED && (defined(__ARM_NEON) || defined(__ARM_NEON__))
+    /* ARM NEON SIMD优化 - 每次处理2个双精度浮点数 */
+    size_t k;
+    for (k = 0; k + 1 < n; k += 2) {
+        float64x2_t a_vec = vld1q_f64(&A->data[k]);
+        float64x2_t b_vec = vld1q_f64(&B->data[k]);
+        float64x2_t r_vec = vaddq_f64(a_vec, b_vec);
+        vst1q_f64(&R->data[k], r_vec);
+    }
+    for (; k < n; k++) {
+        R->data[k] = A->data[k] + B->data[k];
+    }
+#else
     /* 循环展开优化 - 每次处理4个元素 */
     size_t k;
     for (k = 0; k + 3 < n; k += 4) {
@@ -159,10 +198,10 @@ ERROR_ID matrix_add(_IN MATRIX *A, _IN MATRIX *B, _OUT MATRIX **C, MEMSTACK *ms)
         R->data[k+2] = A->data[k+2] + B->data[k+2];
         R->data[k+3] = A->data[k+3] + B->data[k+3];
     }
-    /* 处理剩余元素 */
     for (; k < n; k++) {
         R->data[k] = A->data[k] + B->data[k];
     }
+#endif
     
     *C = R;
     return ERR_OK;
@@ -184,7 +223,37 @@ ERROR_ID matrix_sub(_IN MATRIX *A, _IN MATRIX *B, _OUT MATRIX **C, MEMSTACK *ms)
     MATRIX *R = matrix_create(A->rows, A->cols, &e, ms);
     if (!R) return e;
     size_t n = A->rows * A->cols;
-    for (size_t k=0;k<n;k++) R->data[k] = A->data[k] - B->data[k];
+    
+#if SIMD_SUPPORTED && (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))
+    /* AVX SIMD优化 - 每次处理4个双精度浮点数 */
+    size_t k;
+    for (k = 0; k + 3 < n; k += 4) {
+        __m256d a_vec = _mm256_loadu_pd(&A->data[k]);
+        __m256d b_vec = _mm256_loadu_pd(&B->data[k]);
+        __m256d r_vec = _mm256_sub_pd(a_vec, b_vec);
+        _mm256_storeu_pd(&R->data[k], r_vec);
+    }
+    for (; k < n; k++) {
+        R->data[k] = A->data[k] - B->data[k];
+    }
+#elif SIMD_SUPPORTED && (defined(__ARM_NEON) || defined(__ARM_NEON__))
+    /* ARM NEON SIMD优化 - 每次处理2个双精度浮点数 */
+    size_t k;
+    for (k = 0; k + 1 < n; k += 2) {
+        float64x2_t a_vec = vld1q_f64(&A->data[k]);
+        float64x2_t b_vec = vld1q_f64(&B->data[k]);
+        float64x2_t r_vec = vsubq_f64(a_vec, b_vec);
+        vst1q_f64(&R->data[k], r_vec);
+    }
+    for (; k < n; k++) {
+        R->data[k] = A->data[k] - B->data[k];
+    }
+#else
+    for (size_t k = 0; k < n; k++) {
+        R->data[k] = A->data[k] - B->data[k];
+    }
+#endif
+    
     *C = R;
     return ERR_OK;
 }
@@ -205,6 +274,31 @@ ERROR_ID matrix_scalar_mul(_IN MATRIX *A, REAL k, _OUT MATRIX **C, MEMSTACK *ms)
     if (!R) return e;
     size_t n = A->rows * A->cols;
     
+#if SIMD_SUPPORTED && (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))
+    /* AVX SIMD优化 - 每次处理4个双精度浮点数 */
+    __m256d k_vec = _mm256_set1_pd(k);
+    size_t i;
+    for (i = 0; i + 3 < n; i += 4) {
+        __m256d a_vec = _mm256_loadu_pd(&A->data[i]);
+        __m256d r_vec = _mm256_mul_pd(a_vec, k_vec);
+        _mm256_storeu_pd(&R->data[i], r_vec);
+    }
+    for (; i < n; i++) {
+        R->data[i] = A->data[i] * k;
+    }
+#elif SIMD_SUPPORTED && (defined(__ARM_NEON) || defined(__ARM_NEON__))
+    /* ARM NEON SIMD优化 - 每次处理2个双精度浮点数 */
+    float64x2_t k_vec = vdupq_n_f64(k);
+    size_t i;
+    for (i = 0; i + 1 < n; i += 2) {
+        float64x2_t a_vec = vld1q_f64(&A->data[i]);
+        float64x2_t r_vec = vmulq_f64(a_vec, k_vec);
+        vst1q_f64(&R->data[i], r_vec);
+    }
+    for (; i < n; i++) {
+        R->data[i] = A->data[i] * k;
+    }
+#else
     /* 循环展开优化 - 每次处理4个元素 */
     size_t i;
     for (i = 0; i + 3 < n; i += 4) {
@@ -213,10 +307,10 @@ ERROR_ID matrix_scalar_mul(_IN MATRIX *A, REAL k, _OUT MATRIX **C, MEMSTACK *ms)
         R->data[i+2] = A->data[i+2] * k;
         R->data[i+3] = A->data[i+3] * k;
     }
-    /* 处理剩余元素 */
     for (; i < n; i++) {
         R->data[i] = A->data[i] * k;
     }
+#endif
     
     *C = R;
     return ERR_OK;
@@ -236,6 +330,75 @@ ERROR_ID matrix_transpose(_IN MATRIX *A, _OUT MATRIX **T, MEMSTACK *ms) {
     MATRIX *R = matrix_create(A->cols, A->rows, &e, ms);
     if (!R) return e;
     
+#if SIMD_SUPPORTED && (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))
+    /* AVX SIMD优化转置 - 使用4x4块处理 */
+    const size_t BLOCK_SIZE = 4;
+    size_t i, j;
+    
+    /* 分块处理主区域 */
+    for (i = 0; i + BLOCK_SIZE - 1 < A->rows; i += BLOCK_SIZE) {
+        for (j = 0; j + BLOCK_SIZE - 1 < A->cols; j += BLOCK_SIZE) {
+            /* 使用AVX加载4x4块并转置 */
+            for (size_t ii = i; ii < i + BLOCK_SIZE; ii++) {
+                /* 加载一行4个元素 */
+                __m256d row_vec = _mm256_loadu_pd(&A->data[idx(A, ii, j)]);
+                /* 分散存储到转置位置 */
+                for (size_t jj = 0; jj < BLOCK_SIZE; jj++) {
+                    R->data[idx(R, j + jj, ii)] = ((double*)&row_vec)[jj];
+                }
+            }
+        }
+    }
+    
+    /* 处理剩余的行 */
+    for (i = A->rows - (A->rows % BLOCK_SIZE); i < A->rows; i++) {
+        for (j = 0; j < A->cols; j++) {
+            R->data[idx(R, j, i)] = A->data[idx(A, i, j)];
+        }
+    }
+    
+    /* 处理剩余的列 */
+    for (j = A->cols - (A->cols % BLOCK_SIZE); j < A->cols; j++) {
+        for (i = 0; i < A->rows - (A->rows % BLOCK_SIZE); i++) {
+            R->data[idx(R, j, i)] = A->data[idx(A, i, j)];
+        }
+    }
+    
+#elif SIMD_SUPPORTED && (defined(__ARM_NEON) || defined(__ARM_NEON__))
+    /* ARM NEON SIMD优化转置 - 使用2x2块处理 */
+    const size_t BLOCK_SIZE = 2;
+    size_t i, j;
+    
+    /* 分块处理主区域 */
+    for (i = 0; i + BLOCK_SIZE - 1 < A->rows; i += BLOCK_SIZE) {
+        for (j = 0; j + BLOCK_SIZE - 1 < A->cols; j += BLOCK_SIZE) {
+            /* 使用NEON加载2x2块并转置 */
+            for (size_t ii = i; ii < i + BLOCK_SIZE; ii++) {
+                /* 加载一行2个元素 */
+                float64x2_t row_vec = vld1q_f64(&A->data[idx(A, ii, j)]);
+                /* 分散存储到转置位置 */
+                for (size_t jj = 0; jj < BLOCK_SIZE; jj++) {
+                    R->data[idx(R, j + jj, ii)] = ((double*)&row_vec)[jj];
+                }
+            }
+        }
+    }
+    
+    /* 处理剩余的行 */
+    for (i = A->rows - (A->rows % BLOCK_SIZE); i < A->rows; i++) {
+        for (j = 0; j < A->cols; j++) {
+            R->data[idx(R, j, i)] = A->data[idx(A, i, j)];
+        }
+    }
+    
+    /* 处理剩余的列 */
+    for (j = A->cols - (A->cols % BLOCK_SIZE); j < A->cols; j++) {
+        for (i = 0; i < A->rows - (A->rows % BLOCK_SIZE); i++) {
+            R->data[idx(R, j, i)] = A->data[idx(A, i, j)];
+        }
+    }
+    
+#else
     /* 分块转置优化 - 使用8x8块大小提高缓存命中率 */
     const size_t BLOCK_SIZE = 8;
     size_t i, j;
@@ -265,6 +428,7 @@ ERROR_ID matrix_transpose(_IN MATRIX *A, _OUT MATRIX **T, MEMSTACK *ms) {
             R->data[idx(R, j, i)] = A->data[idx(A, i, j)];
         }
     }
+#endif
     
     *T = R;
     return ERR_OK;

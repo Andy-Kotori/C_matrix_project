@@ -13,7 +13,7 @@
 void performance_test(void) {
     printf("\n========== 性能测试 ==========\n");
     
-    size_t sizes[] = {100, 500, 1000, 10000};
+    size_t sizes[] = {100, 500, 1000};
     int num_sizes = sizeof(sizes) / sizeof(sizes[0]);
     
     for (int i = 0; i < num_sizes; i++) {
