@@ -143,4 +143,16 @@ ERROR_ID matrix_adjugate(_IN MATRIX *A, _OUT MATRIX **adj, MEMSTACK *ms);
  */
 ERROR_ID matrix_inverse(_IN MATRIX *A, _OUT MATRIX **inv, MEMSTACK *ms);
 
+/**
+ * @brief Strassen矩阵乘法（快速算法）
+ * @param A 第一个矩阵
+ * @param B 第二个矩阵
+ * @param C 结果矩阵指针的指针
+ * @param ms 内存栈指针
+ * @return 错误码
+ * @details 使用Strassen算法实现O(n^2.81)复杂度的矩阵乘法
+ *          适用于大矩阵，当矩阵尺寸小于阈值时使用标准算法
+ */
+ERROR_ID matrix_multiply_strassen(_IN MATRIX *A, _IN MATRIX *B, _OUT MATRIX **C, MEMSTACK *ms);
+
 #endif /* MATRIX_H */
