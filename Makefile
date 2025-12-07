@@ -1,5 +1,5 @@
 CC = gcc
-CFLAGS = -std=c11 -O2 -Wall -Wextra
+CFLAGS = -std=c11 -O3 -march=native -ffast-math -funroll-loops -Wall -Wextra
 OBJS = memstack.o matrix.o main.o
 
 all: matdemo

@@ -150,7 +150,20 @@ ERROR_ID matrix_add(_IN MATRIX *A, _IN MATRIX *B, _OUT MATRIX **C, MEMSTACK *ms)
     MATRIX *R = matrix_create(A->rows, A->cols, &e, ms);
     if (!R) return e;
     size_t n = A->rows * A->cols;
-    for (size_t k=0;k<n;k++) R->data[k] = A->data[k] + B->data[k];
+    
+    /* 循环展开优化 - 每次处理4个元素 */
+    size_t k;
+    for (k = 0; k + 3 < n; k += 4) {
+        R->data[k]   = A->data[k]   + B->data[k];
+        R->data[k+1] = A->data[k+1] + B->data[k+1];
+        R->data[k+2] = A->data[k+2] + B->data[k+2];
+        R->data[k+3] = A->data[k+3] + B->data[k+3];
+    }
+    /* 处理剩余元素 */
+    for (; k < n; k++) {
+        R->data[k] = A->data[k] + B->data[k];
+    }
+    
     *C = R;
     return ERR_OK;
 }
@@ -191,7 +204,20 @@ ERROR_ID matrix_scalar_mul(_IN MATRIX *A, REAL k, _OUT MATRIX **C, MEMSTACK *ms)
     MATRIX *R = matrix_create(A->rows, A->cols, &e, ms);
     if (!R) return e;
     size_t n = A->rows * A->cols;
-    for (size_t i=0;i<n;i++) R->data[i] = A->data[i] * k;
+    
+    /* 循环展开优化 - 每次处理4个元素 */
+    size_t i;
+    for (i = 0; i + 3 < n; i += 4) {
+        R->data[i]   = A->data[i]   * k;
+        R->data[i+1] = A->data[i+1] * k;
+        R->data[i+2] = A->data[i+2] * k;
+        R->data[i+3] = A->data[i+3] * k;
+    }
+    /* 处理剩余元素 */
+    for (; i < n; i++) {
+        R->data[i] = A->data[i] * k;
+    }
+    
     *C = R;
     return ERR_OK;
 }
@@ -209,8 +235,37 @@ ERROR_ID matrix_transpose(_IN MATRIX *A, _OUT MATRIX **T, MEMSTACK *ms) {
     ERROR_ID e;
     MATRIX *R = matrix_create(A->cols, A->rows, &e, ms);
     if (!R) return e;
-    for (size_t i=0;i<A->rows;i++) for (size_t j=0;j<A->cols;j++)
-        R->data[idx(R,j,i)] = A->data[idx(A,i,j)];
+    
+    /* 分块转置优化 - 使用8x8块大小提高缓存命中率 */
+    const size_t BLOCK_SIZE = 8;
+    size_t i, j;
+    
+    /* 分块处理主区域 */
+    for (i = 0; i + BLOCK_SIZE - 1 < A->rows; i += BLOCK_SIZE) {
+        for (j = 0; j + BLOCK_SIZE - 1 < A->cols; j += BLOCK_SIZE) {
+            /* 处理每个块 */
+            for (size_t ii = i; ii < i + BLOCK_SIZE; ii++) {
+                for (size_t jj = j; jj < j + BLOCK_SIZE; jj++) {
+                    R->data[idx(R, jj, ii)] = A->data[idx(A, ii, jj)];
+                }
+            }
+        }
+    }
+    
+    /* 处理剩余的行 */
+    for (i = A->rows - (A->rows % BLOCK_SIZE); i < A->rows; i++) {
+        for (j = 0; j < A->cols; j++) {
+            R->data[idx(R, j, i)] = A->data[idx(A, i, j)];
+        }
+    }
+    
+    /* 处理剩余的列 */
+    for (j = A->cols - (A->cols % BLOCK_SIZE); j < A->cols; j++) {
+        for (i = 0; i < A->rows - (A->rows % BLOCK_SIZE); i++) {
+            R->data[idx(R, j, i)] = A->data[idx(A, i, j)];
+        }
+    }
+    
     *T = R;
     return ERR_OK;
 }
@@ -231,14 +286,38 @@ ERROR_ID matrix_multiply(_IN MATRIX *A, _IN MATRIX *B, _OUT MATRIX **C, MEMSTACK
     ERROR_ID e;
     MATRIX *R = matrix_create(A->rows, B->cols, &e, ms);
     if (!R) return e;
-    for (size_t i=0;i<A->rows;i++) {
-        for (size_t k=0;k<A->cols;k++) {
-            REAL a = A->data[idx(A,i,k)];
-            for (size_t j=0;j<B->cols;j++) {
-                R->data[idx(R,i,j)] += a * B->data[idx(B,k,j)];
+    
+    /* 分块矩阵乘法优化 - 提高缓存命中率 */
+    const size_t BLOCK_SIZE = 32;
+    size_t i, j, k, ii, jj, kk;
+    
+    /* 初始化结果矩阵为0 */
+    size_t n = A->rows * B->cols;
+    for (size_t idx = 0; idx < n; idx++) {
+        R->data[idx] = 0.0;
+    }
+    
+    /* 分块矩阵乘法 */
+    for (i = 0; i < A->rows; i += BLOCK_SIZE) {
+        for (j = 0; j < B->cols; j += BLOCK_SIZE) {
+            for (k = 0; k < A->cols; k += BLOCK_SIZE) {
+                /* 处理每个块 */
+                size_t i_end = (i + BLOCK_SIZE < A->rows) ? i + BLOCK_SIZE : A->rows;
+                size_t j_end = (j + BLOCK_SIZE < B->cols) ? j + BLOCK_SIZE : B->cols;
+                size_t k_end = (k + BLOCK_SIZE < A->cols) ? k + BLOCK_SIZE : A->cols;
+                
+                for (ii = i; ii < i_end; ii++) {
+                    for (kk = k; kk < k_end; kk++) {
+                        REAL a = A->data[idx(A, ii, kk)];
+                        for (jj = j; jj < j_end; jj++) {
+                            R->data[idx(R, ii, jj)] += a * B->data[idx(B, kk, jj)];
+                        }
+                    }
+                }
             }
         }
     }
+    
     *C = R;
     return ERR_OK;
 }
