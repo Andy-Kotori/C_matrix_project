@@ -9,76 +9,124 @@
 #include "memstack.h"
 #include "matrix.h"
 
-/* 性能测试函数 */
+/* 性能测试函数 - 多次测试并计算平均值 */
 void performance_test(void) {
     printf("\n========== 性能测试 ==========\n");
+    
+    /* 打开结果文件 */
+    FILE *fp = fopen("results.txt", "w");
+    if (!fp) {
+        printf("无法创建结果文件 results.txt\n");
+        return;
+    }
+    
+    fprintf(fp, "矩阵运算性能测试结果\n");
+    fprintf(fp, "====================\n\n");
+    fprintf(fp, "测试环境:\n");
+    fprintf(fp, "- 矩阵大小: 100, 500, 1000, 10000\n");
+    fprintf(fp, "- 测试次数: 10000矩阵乘法测试5次, 其他运算测试20次\n");
+    fprintf(fp, "- 单位: 秒 (平均值)\n\n");
     
     size_t sizes[] = {100, 500, 1000, 10000};
     int num_sizes = sizeof(sizes) / sizeof(sizes[0]);
     
-    for (int i = 0; i < num_sizes; i++) {
-        size_t n = sizes[i];
+    for (int size_idx = 0; size_idx < num_sizes; size_idx++) {
+        size_t n = sizes[size_idx];
         printf("\n测试 %zux%zu 矩阵...\n", n, n);
+        fprintf(fp, "矩阵大小: %zux%zu\n", n, n);
+        fprintf(fp, "-------------------\n");
         
-        MEMSTACK ms;
-        memstack_init(&ms);
-        ERROR_ID e;
+        /* 确定测试次数：10000矩阵乘法测试5次，其他测试20次 */
+        int num_tests = (n == 10000) ? 5 : 20;
+        int num_multiply_tests = (n == 10000) ? 5 : 20;
         
-        /* 创建测试矩阵 */
-        MATRIX *A = matrix_create(n, n, &e, &ms);
-        MATRIX *B = matrix_create(n, n, &e, &ms);
+        /* 初始化累加器 */
+        double total_add = 0.0, total_scalar = 0.0, total_transpose = 0.0, total_multiply = 0.0;
         
-        if (!A || !B) {
-            printf("矩阵创建失败\n");
-            memstack_free_all(&ms);
-            continue;
-        }
-        
-        /* 初始化矩阵元素 */
-        for (size_t i = 0; i < n; i++) {
-            for (size_t j = 0; j < n; j++) {
-                matrix_set(A, i, j, (double)rand() / RAND_MAX);
-                matrix_set(B, i, j, (double)rand() / RAND_MAX);
+        for (int test = 0; test < num_tests; test++) {
+            MEMSTACK ms;
+            memstack_init(&ms);
+            ERROR_ID e;
+            
+            /* 创建测试矩阵 */
+            MATRIX *A = matrix_create(n, n, &e, &ms);
+            MATRIX *B = matrix_create(n, n, &e, &ms);
+            
+            if (!A || !B) {
+                printf("矩阵创建失败\n");
+                memstack_free_all(&ms);
+                continue;
             }
+            
+            /* 初始化矩阵元素 */
+            for (size_t i = 0; i < n; i++) {
+                for (size_t j = 0; j < n; j++) {
+                    matrix_set(A, i, j, (double)rand() / RAND_MAX);
+                    matrix_set(B, i, j, (double)rand() / RAND_MAX);
+                }
+            }
+            
+            clock_t start, end;
+            double cpu_time;
+            
+            /* 测试矩阵加法 */
+            start = clock();
+            MATRIX *C_add = NULL;
+            e = matrix_add(A, B, &C_add, &ms);
+            end = clock();
+            cpu_time = ((double)(end - start)) / CLOCKS_PER_SEC;
+            total_add += cpu_time;
+            
+            /* 测试矩阵标量乘法 */
+            start = clock();
+            MATRIX *C_scalar = NULL;
+            e = matrix_scalar_mul(A, 2.0, &C_scalar, &ms);
+            end = clock();
+            cpu_time = ((double)(end - start)) / CLOCKS_PER_SEC;
+            total_scalar += cpu_time;
+            
+            /* 测试矩阵转置 */
+            start = clock();
+            MATRIX *C_transpose = NULL;
+            e = matrix_transpose(A, &C_transpose, &ms);
+            end = clock();
+            cpu_time = ((double)(end - start)) / CLOCKS_PER_SEC;
+            total_transpose += cpu_time;
+            
+            /* 测试矩阵乘法（根据矩阵大小决定测试次数） */
+            if (test < num_multiply_tests) {
+                start = clock();
+                MATRIX *C_multiply = NULL;
+                e = matrix_multiply(A, B, &C_multiply, &ms);
+                end = clock();
+                cpu_time = ((double)(end - start)) / CLOCKS_PER_SEC;
+                total_multiply += cpu_time;
+            }
+            
+            memstack_free_all(&ms);
         }
         
-        clock_t start, end;
-        double cpu_time;
+        /* 计算平均值 */
+        double avg_add = total_add / num_tests;
+        double avg_scalar = total_scalar / num_tests;
+        double avg_transpose = total_transpose / num_tests;
+        double avg_multiply = total_multiply / num_multiply_tests;
         
-        /* 测试矩阵加法 */
-        start = clock();
-        MATRIX *C_add = NULL;
-        e = matrix_add(A, B, &C_add, &ms);
-        end = clock();
-        cpu_time = ((double)(end - start)) / CLOCKS_PER_SEC;
-        printf("矩阵加法: %.4f 秒\n", cpu_time);
+        /* 打印和保存结果 */
+        printf("矩阵加法 (平均): %.4f 秒\n", avg_add);
+        printf("矩阵标量乘法 (平均): %.4f 秒\n", avg_scalar);
+        printf("矩阵转置 (平均): %.4f 秒\n", avg_transpose);
+        printf("矩阵乘法 (平均): %.4f 秒\n", avg_multiply);
         
-        /* 测试矩阵标量乘法 */
-        start = clock();
-        MATRIX *C_scalar = NULL;
-        e = matrix_scalar_mul(A, 2.0, &C_scalar, &ms);
-        end = clock();
-        cpu_time = ((double)(end - start)) / CLOCKS_PER_SEC;
-        printf("矩阵标量乘法: %.4f 秒\n", cpu_time);
-        
-        /* 测试矩阵转置 */
-        start = clock();
-        MATRIX *C_transpose = NULL;
-        e = matrix_transpose(A, &C_transpose, &ms);
-        end = clock();
-        cpu_time = ((double)(end - start)) / CLOCKS_PER_SEC;
-        printf("矩阵转置: %.4f 秒\n", cpu_time);
-        
-        /* 测试矩阵乘法 */
-        start = clock();
-        MATRIX *C_multiply = NULL;
-        e = matrix_multiply(A, B, &C_multiply, &ms);
-        end = clock();
-        cpu_time = ((double)(end - start)) / CLOCKS_PER_SEC;
-        printf("矩阵乘法: %.4f 秒\n", cpu_time);
-        
-        memstack_free_all(&ms);
+        fprintf(fp, "矩阵加法: %.4f 秒 (测试 %d 次)\n", avg_add, num_tests);
+        fprintf(fp, "矩阵标量乘法: %.4f 秒 (测试 %d 次)\n", avg_scalar, num_tests);
+        fprintf(fp, "矩阵转置: %.4f 秒 (测试 %d 次)\n", avg_transpose, num_tests);
+        fprintf(fp, "矩阵乘法: %.4f 秒 (测试 %d 次)\n", avg_multiply, num_multiply_tests);
+        fprintf(fp, "\n");
     }
+    
+    fclose(fp);
+    printf("\n测试结果已保存到 results.txt\n");
 }
 
 /* 基础功能测试 */
