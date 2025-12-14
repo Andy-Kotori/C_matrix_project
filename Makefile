@@ -1,20 +1,20 @@
 CC = gcc
-CFLAGS = -std=c11 -O3 -march=native -ffast-math -funroll-loops -Wall -Wextra
-OBJS = memstack.o matrix.o main.o
+CFLAGS = -std=c11 -O3 -march=native -ffast-math -funroll-loops -Wall -Wextra -IInc
+OBJS = Src/memstack.o Src/matrix.o Src/main.o
 
 all: matdemo
 
-memstack.o: memstack.c memstack.h types.h
-	$(CC) $(CFLAGS) -c memstack.c
+Src/memstack.o: Src/memstack.c Inc/memstack.h Inc/types.h
+	$(CC) $(CFLAGS) -c Src/memstack.c -o Src/memstack.o
 
-matrix.o: matrix.c matrix.h memstack.h types.h
-	$(CC) $(CFLAGS) -c matrix.c
+Src/matrix.o: Src/matrix.c Inc/matrix.h Inc/memstack.h Inc/types.h
+	$(CC) $(CFLAGS) -c Src/matrix.c -o Src/matrix.o
 
-main.o: main.c matrix.h memstack.h types.h
-	$(CC) $(CFLAGS) -c main.c
+Src/main.o: Src/main.c Inc/matrix.h Inc/memstack.h Inc/types.h
+	$(CC) $(CFLAGS) -c Src/main.c -o Src/main.o
 
 matdemo: $(OBJS)
 	$(CC) $(CFLAGS) -o matdemo $(OBJS)
 
 clean:
-	rm -f *.o matdemo
+	rm -f Src/*.o matdemo

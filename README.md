@@ -14,15 +14,17 @@
 
 ```
 matrix_project/
-├── main.c              # 主程序，包含功能测试和性能测试
-├── matrix.c            # 矩阵运算核心实现
-├── matrix.h            # 矩阵库头文件
-├── memstack.c          # 内存栈管理实现
-├── memstack.h          # 内存栈头文件
-├── types.h             # 自定义类型和错误码定义
-├── Makefile            # 编译配置文件
-├── results.txt         # 性能测试结果文件（自动生成）
-└── README.md           # 项目说明文档
+├── Inc/                  # 头文件目录
+│   ├── matrix.h          # 矩阵库头文件
+│   ├── memstack.h        # 内存栈头文件
+│   └── types.h           # 自定义类型和错误码定义
+├── Src/                  # 源文件目录
+│   ├── main.c            # 主程序，包含功能测试和性能测试
+│   ├── matrix.c          # 矩阵运算核心实现
+│   └── memstack.c        # 内存栈管理实现
+├── Makefile              # 编译配置文件
+├── results.txt           # 性能测试结果文件（自动生成）
+└── README.md             # 项目说明文档
 ```
 
 ## 编译说明
