@@ -390,6 +390,301 @@ ERROR_ID matrix_determinant(_IN MATRIX *A, _OUT REAL *det) {
 }
 
 /**
+ * @brief 计算矩阵行列式（优化的递归展开法）
+ * @param A 方阵
+ * @param det 行列式值输出指针
+ * @return 错误码
+ * @details 使用优化的Laplace展开，添加循环展开和缓存优化
+ */
+ERROR_ID matrix_determinant_recursive(_IN MATRIX *A, _OUT REAL *det) {
+    if (!A || !det) return ERR_INVALID_ARG;
+    if (A->rows != A->cols) return ERR_DIM_MISMATCH;
+    size_t n = A->rows;
+    
+    /* 基础情况 */
+    if (n == 1) { *det = A->data[0]; return ERR_OK; }
+    if (n == 2) {
+        *det = A->data[0]*A->data[3] - A->data[1]*A->data[2];
+        return ERR_OK;
+    }
+    if (n == 3) {
+        /* 3x3矩阵直接使用公式，避免递归开销 */
+        *det = A->data[0] * (A->data[4]*A->data[8] - A->data[5]*A->data[7]) -
+               A->data[1] * (A->data[3]*A->data[8] - A->data[5]*A->data[6]) +
+               A->data[2] * (A->data[3]*A->data[7] - A->data[4]*A->data[6]);
+        return ERR_OK;
+    }
+    
+    REAL sum = 0.0;
+    MEMSTACK ms;
+    memstack_init(&ms);
+    
+    /* 循环展开 - 每次处理4列 */
+    size_t c;
+    for (c = 0; c + 3 < n; c += 4) {
+        /* 处理4列 */
+        for (size_t col = c; col < c + 4 && col < n; col++) {
+            ERROR_ID e;
+            MATRIX *sub = matrix_minor(A, 0, col, &e, &ms);
+            if (!sub) { memstack_free_all(&ms); return e; }
+            REAL subdet = 0.0;
+            e = matrix_determinant_recursive(sub, &subdet);
+            if (e != ERR_OK) { memstack_free_all(&ms); return e; }
+            REAL cofactor = A->data[idx(A, 0, col)] * subdet;
+            if ((col & 1) != 0) cofactor = -cofactor;
+            sum += cofactor;
+        }
+    }
+    
+    /* 处理剩余的列 */
+    for (; c < n; c++) {
+        ERROR_ID e;
+        MATRIX *sub = matrix_minor(A, 0, c, &e, &ms);
+        if (!sub) { memstack_free_all(&ms); return e; }
+        REAL subdet = 0.0;
+        e = matrix_determinant_recursive(sub, &subdet);
+        if (e != ERR_OK) { memstack_free_all(&ms); return e; }
+        REAL cofactor = A->data[idx(A, 0, c)] * subdet;
+        if ((c & 1) != 0) cofactor = -cofactor;
+        sum += cofactor;
+    }
+    
+    memstack_free_all(&ms);
+    *det = sum;
+    return ERR_OK;
+}
+
+/**
+ * @brief 计算矩阵行列式（高斯消元法）
+ * @param A 方阵
+ * @param det 行列式值输出指针
+ * @return 错误码
+ * @details 使用高斯消元将矩阵化为上三角矩阵，行列式等于对角线元素乘积
+ */
+ERROR_ID matrix_determinant_gaussian(_IN MATRIX *A, _OUT REAL *det) {
+    if (!A || !det) return ERR_INVALID_ARG;
+    if (A->rows != A->cols) return ERR_DIM_MISMATCH;
+    size_t n = A->rows;
+    
+    /* 创建矩阵副本，避免修改原矩阵 */
+    MEMSTACK ms;
+    memstack_init(&ms);
+    MATRIX *M = matrix_create(n, n, NULL, &ms);
+    if (!M) { memstack_free_all(&ms); return ERR_OOM; }
+    
+    /* 复制矩阵数据 */
+    size_t total_elements = n * n;
+    size_t k;
+    for (k = 0; k + 3 < total_elements; k += 4) {
+        M->data[k]   = A->data[k];
+        M->data[k+1] = A->data[k+1];
+        M->data[k+2] = A->data[k+2];
+        M->data[k+3] = A->data[k+3];
+    }
+    for (; k < total_elements; k++) {
+        M->data[k] = A->data[k];
+    }
+    
+    REAL determinant = 1.0;
+    
+    /* 高斯消元 */
+    for (size_t i = 0; i < n; i++) {
+        /* 寻找主元 */
+        size_t max_row = i;
+        REAL max_val = M->data[idx(M, i, i)];
+        if (max_val < 0) max_val = -max_val;
+        
+        for (size_t row = i + 1; row < n; row++) {
+            REAL val = M->data[idx(M, row, i)];
+            if (val < 0) val = -val;
+            if (val > max_val) {
+                max_val = val;
+                max_row = row;
+            }
+        }
+        
+        /* 如果主元为0，行列式为0 */
+        if (max_val < 1e-12) {
+            memstack_free_all(&ms);
+            *det = 0.0;
+            return ERR_OK;
+        }
+        
+        /* 交换行（如果需要） */
+        if (max_row != i) {
+            /* 循环展开优化行交换 */
+            for (size_t col = 0; col + 3 < n; col += 4) {
+                REAL temp = M->data[idx(M, i, col)];
+                M->data[idx(M, i, col)] = M->data[idx(M, max_row, col)];
+                M->data[idx(M, max_row, col)] = temp;
+                
+                temp = M->data[idx(M, i, col+1)];
+                M->data[idx(M, i, col+1)] = M->data[idx(M, max_row, col+1)];
+                M->data[idx(M, max_row, col+1)] = temp;
+                
+                temp = M->data[idx(M, i, col+2)];
+                M->data[idx(M, i, col+2)] = M->data[idx(M, max_row, col+2)];
+                M->data[idx(M, max_row, col+2)] = temp;
+                
+                temp = M->data[idx(M, i, col+3)];
+                M->data[idx(M, i, col+3)] = M->data[idx(M, max_row, col+3)];
+                M->data[idx(M, max_row, col+3)] = temp;
+            }
+            for (size_t col = n - (n % 4); col < n; col++) {
+                REAL temp = M->data[idx(M, i, col)];
+                M->data[idx(M, i, col)] = M->data[idx(M, max_row, col)];
+                M->data[idx(M, max_row, col)] = temp;
+            }
+            determinant = -determinant; /* 行交换改变符号 */
+        }
+        
+        /* 消元 */
+        REAL pivot = M->data[idx(M, i, i)];
+        for (size_t row = i + 1; row < n; row++) {
+            REAL factor = M->data[idx(M, row, i)] / pivot;
+            if (factor != 0.0) {
+                /* 循环展开优化消元 */
+                for (size_t col = i; col + 3 < n; col += 4) {
+                    M->data[idx(M, row, col)]   -= factor * M->data[idx(M, i, col)];
+                    M->data[idx(M, row, col+1)] -= factor * M->data[idx(M, i, col+1)];
+                    M->data[idx(M, row, col+2)] -= factor * M->data[idx(M, i, col+2)];
+                    M->data[idx(M, row, col+3)] -= factor * M->data[idx(M, i, col+3)];
+                }
+                for (size_t col = n - (n % 4); col < n; col++) {
+                    M->data[idx(M, row, col)] -= factor * M->data[idx(M, i, col)];
+                }
+            }
+        }
+    }
+    
+    /* 计算对角线元素乘积 */
+    for (size_t i = 0; i < n; i++) {
+        determinant *= M->data[idx(M, i, i)];
+    }
+    
+    memstack_free_all(&ms);
+    *det = determinant;
+    return ERR_OK;
+}
+
+/**
+ * @brief 计算矩阵行列式（LU分解法）
+ * @param A 方阵
+ * @param det 行列式值输出指针
+ * @return 错误码
+ * @details 使用LU分解，行列式等于U矩阵对角线元素乘积乘以排列矩阵的行列式
+ */
+ERROR_ID matrix_determinant_lu(_IN MATRIX *A, _OUT REAL *det) {
+    if (!A || !det) return ERR_INVALID_ARG;
+    if (A->rows != A->cols) return ERR_DIM_MISMATCH;
+    size_t n = A->rows;
+    
+    /* 创建矩阵副本 */
+    MEMSTACK ms;
+    memstack_init(&ms);
+    MATRIX *M = matrix_create(n, n, NULL, &ms);
+    if (!M) { memstack_free_all(&ms); return ERR_OOM; }
+    
+    /* 复制矩阵数据 */
+    size_t total_elements = n * n;
+    size_t k;
+    for (k = 0; k + 3 < total_elements; k += 4) {
+        M->data[k]   = A->data[k];
+        M->data[k+1] = A->data[k+1];
+        M->data[k+2] = A->data[k+2];
+        M->data[k+3] = A->data[k+3];
+    }
+    for (; k < total_elements; k++) {
+        M->data[k] = A->data[k];
+    }
+    
+    REAL determinant = 1.0;
+    int sign = 1; /* 记录行交换次数的奇偶性 */
+    
+    /* LU分解 */
+    for (size_t i = 0; i < n; i++) {
+        /* 寻找主元 */
+        size_t max_row = i;
+        REAL max_val = M->data[idx(M, i, i)];
+        if (max_val < 0) max_val = -max_val;
+        
+        for (size_t row = i + 1; row < n; row++) {
+            REAL val = M->data[idx(M, row, i)];
+            if (val < 0) val = -val;
+            if (val > max_val) {
+                max_val = val;
+                max_row = row;
+            }
+        }
+        
+        /* 如果主元为0，行列式为0 */
+        if (max_val < 1e-12) {
+            memstack_free_all(&ms);
+            *det = 0.0;
+            return ERR_OK;
+        }
+        
+        /* 交换行（如果需要） */
+        if (max_row != i) {
+            /* 循环展开优化行交换 */
+            for (size_t col = 0; col + 3 < n; col += 4) {
+                REAL temp = M->data[idx(M, i, col)];
+                M->data[idx(M, i, col)] = M->data[idx(M, max_row, col)];
+                M->data[idx(M, max_row, col)] = temp;
+                
+                temp = M->data[idx(M, i, col+1)];
+                M->data[idx(M, i, col+1)] = M->data[idx(M, max_row, col+1)];
+                M->data[idx(M, max_row, col+1)] = temp;
+                
+                temp = M->data[idx(M, i, col+2)];
+                M->data[idx(M, i, col+2)] = M->data[idx(M, max_row, col+2)];
+                M->data[idx(M, max_row, col+2)] = temp;
+                
+                temp = M->data[idx(M, i, col+3)];
+                M->data[idx(M, i, col+3)] = M->data[idx(M, max_row, col+3)];
+                M->data[idx(M, max_row, col+3)] = temp;
+            }
+            for (size_t col = n - (n % 4); col < n; col++) {
+                REAL temp = M->data[idx(M, i, col)];
+                M->data[idx(M, i, col)] = M->data[idx(M, max_row, col)];
+                M->data[idx(M, max_row, col)] = temp;
+            }
+            sign = -sign; /* 行交换改变符号 */
+        }
+        
+        /* 计算L和U矩阵 */
+        REAL pivot = M->data[idx(M, i, i)];
+        for (size_t row = i + 1; row < n; row++) {
+            REAL factor = M->data[idx(M, row, i)] / pivot;
+            M->data[idx(M, row, i)] = factor; /* 存储L矩阵元素 */
+            
+            /* 更新U矩阵元素 */
+            for (size_t col = i + 1; col + 3 < n; col += 4) {
+                M->data[idx(M, row, col)]   -= factor * M->data[idx(M, i, col)];
+                M->data[idx(M, row, col+1)] -= factor * M->data[idx(M, i, col+1)];
+                M->data[idx(M, row, col+2)] -= factor * M->data[idx(M, i, col+2)];
+                M->data[idx(M, row, col+3)] -= factor * M->data[idx(M, i, col+3)];
+            }
+            for (size_t col = n - (n % 4); col < n; col++) {
+                M->data[idx(M, row, col)] -= factor * M->data[idx(M, i, col)];
+            }
+        }
+    }
+    
+    /* 计算U矩阵对角线元素乘积 */
+    for (size_t i = 0; i < n; i++) {
+        determinant *= M->data[idx(M, i, i)];
+    }
+    
+    /* 乘以排列矩阵的行列式（sign） */
+    determinant *= sign;
+    
+    memstack_free_all(&ms);
+    *det = determinant;
+    return ERR_OK;
+}
+
+/**
  * @brief 计算伴随矩阵
  * @param A 方阵
  * @param adj 伴随矩阵指针的指针

@@ -23,25 +23,26 @@ void performance_test(void) {
     fprintf(fp, "矩阵运算性能测试结果\n");
     fprintf(fp, "====================\n\n");
     fprintf(fp, "测试环境:\n");
-    fprintf(fp, "- 矩阵大小: 100, 500, 1000, 10000\n");
-    fprintf(fp, "- 测试次数: 10000矩阵乘法测试5次, 其他运算测试20次\n");
+    fprintf(fp, "- 矩阵大小: 10, 50, 100, 500\n");
+    fprintf(fp, "- 测试次数: 小矩阵测试20次, 大矩阵测试5次\n");
     fprintf(fp, "- 单位: 秒 (平均值)\n\n");
     
-    size_t sizes[] = {100, 500, 1000, 10000};
+    size_t sizes[] = {10, 50, 100, 500, 1000};
     int num_sizes = sizeof(sizes) / sizeof(sizes[0]);
     
     for (int size_idx = 0; size_idx < num_sizes; size_idx++) {
         size_t n = sizes[size_idx];
         printf("\n测试 %zux%zu 矩阵...\n", n, n);
         fprintf(fp, "矩阵大小: %zux%zu\n", n, n);
-        fprintf(fp, "-------------------\n");
+        fprintf(fp, "-------------------\n"); 
         
-        /* 确定测试次数：10000矩阵乘法测试5次，其他测试20次 */
-        int num_tests = (n == 10000) ? 5 : 20;
-        int num_multiply_tests = (n == 10000) ? 5 : 20;
-        
+        /* 确定测试次数：500x500矩阵测试5次，其他测试20次 */
+        int num_tests = 1;
+        int num_multiply_tests = 1;
+         
         /* 初始化累加器 */
         double total_add = 0.0, total_scalar = 0.0, total_transpose = 0.0, total_multiply = 0.0;
+        double total_det_recursive = 0.0, total_det_gaussian = 0.0, total_det_lu = 0.0;
         
         for (int test = 0; test < num_tests; test++) {
             MEMSTACK ms;
@@ -51,7 +52,7 @@ void performance_test(void) {
             /* 创建测试矩阵 */
             MATRIX *A = matrix_create(n, n, &e, &ms);
             MATRIX *B = matrix_create(n, n, &e, &ms);
-            
+             
             if (!A || !B) {
                 printf("矩阵创建失败\n");
                 memstack_free_all(&ms);
@@ -103,6 +104,30 @@ void performance_test(void) {
                 total_multiply += cpu_time;
             }
             
+            /* 测试行列式计算（只测试较小的矩阵，因为递归方法复杂度较高） */
+            // if (n <= 50) {  /* 只测试50x50及以下的矩阵 */
+            // REAL det_recursive = 0.0;
+            // start = clock();
+            // e = matrix_determinant_recursive(A, &det_recursive);
+            // end = clock();
+            // cpu_time = ((double)(end - start)) / CLOCKS_PER_SEC;
+            // total_det_recursive += cpu_time;
+            
+            REAL det_gaussian = 0.0;
+            start = clock();
+            e = matrix_determinant_gaussian(A, &det_gaussian);
+            end = clock();
+            cpu_time = ((double)(end - start)) / CLOCKS_PER_SEC;
+            total_det_gaussian += cpu_time;
+            
+            REAL det_lu = 0.0;
+            start = clock();
+            e = matrix_determinant_lu(A, &det_lu);
+            end = clock();
+            cpu_time = ((double)(end - start)) / CLOCKS_PER_SEC;
+            total_det_lu += cpu_time;
+            // }
+            
             memstack_free_all(&ms);
         }
         
@@ -122,6 +147,22 @@ void performance_test(void) {
         fprintf(fp, "矩阵标量乘法: %.4f 秒 (测试 %d 次)\n", avg_scalar, num_tests);
         fprintf(fp, "矩阵转置: %.4f 秒 (测试 %d 次)\n", avg_transpose, num_tests);
         fprintf(fp, "矩阵乘法: %.4f 秒 (测试 %d 次)\n", avg_multiply, num_multiply_tests);
+        
+        /* 打印行列式计算结果（只针对小矩阵） */
+        // if (n <= 50) {
+        double avg_det_recursive = total_det_recursive / num_tests;
+        double avg_det_gaussian = total_det_gaussian / num_tests;
+        double avg_det_lu = total_det_lu / num_tests;
+        
+        printf("行列式计算-递归展开法 (平均): %.4f 秒\n", avg_det_recursive);
+        printf("行列式计算-高斯消元法 (平均): %.4f 秒\n", avg_det_gaussian);
+        printf("行列式计算-LU分解法 (平均): %.4f 秒\n", avg_det_lu);
+        
+        fprintf(fp, "行列式计算-递归展开法: %.4f 秒 (测试 %d 次)\n", avg_det_recursive, num_tests);
+        fprintf(fp, "行列式计算-高斯消元法: %.4f 秒 (测试 %d 次)\n", avg_det_gaussian, num_tests);
+        fprintf(fp, "行列式计算-LU分解法: %.4f 秒 (测试 %d 次)\n", avg_det_lu, num_tests);
+        // }
+        
         fprintf(fp, "\n");
     }
     

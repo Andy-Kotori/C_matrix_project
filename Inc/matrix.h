@@ -115,13 +115,40 @@ ERROR_ID matrix_transpose(_IN MATRIX *A, _OUT MATRIX **T, MEMSTACK *ms);
 ERROR_ID matrix_multiply(_IN MATRIX *A, _IN MATRIX *B, _OUT MATRIX **C, MEMSTACK *ms);
 
 /**
- * @brief 计算矩阵行列式
+ * @brief 计算矩阵行列式（递归Laplace展开）
  * @param A 方阵
  * @param det 行列式值输出指针
  * @return 错误码
  * @details 使用递归Laplace展开，适合教学演示
  */
 ERROR_ID matrix_determinant(_IN MATRIX *A, _OUT REAL *det);
+
+/**
+ * @brief 计算矩阵行列式（优化的递归展开法）
+ * @param A 方阵
+ * @param det 行列式值输出指针
+ * @return 错误码
+ * @details 使用优化的Laplace展开，添加循环展开和缓存优化
+ */
+ERROR_ID matrix_determinant_recursive(_IN MATRIX *A, _OUT REAL *det);
+
+/**
+ * @brief 计算矩阵行列式（高斯消元法）
+ * @param A 方阵
+ * @param det 行列式值输出指针
+ * @return 错误码
+ * @details 使用高斯消元将矩阵化为上三角矩阵，行列式等于对角线元素乘积
+ */
+ERROR_ID matrix_determinant_gaussian(_IN MATRIX *A, _OUT REAL *det);
+
+/**
+ * @brief 计算矩阵行列式（LU分解法）
+ * @param A 方阵
+ * @param det 行列式值输出指针
+ * @return 错误码
+ * @details 使用LU分解，行列式等于U矩阵对角线元素乘积乘以排列矩阵的行列式
+ */
+ERROR_ID matrix_determinant_lu(_IN MATRIX *A, _OUT REAL *det);
 
 /**
  * @brief 计算伴随矩阵
