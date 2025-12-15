@@ -27,7 +27,7 @@ void performance_test(void) {
     fprintf(fp, "- 测试次数: 小矩阵测试20次, 大矩阵测试5次\n");
     fprintf(fp, "- 单位: 秒 (平均值)\n\n");
     
-    size_t sizes[] = {10, 50, 100, 500, 1000};
+    size_t sizes[] = {10, 50, 100, 500};
     int num_sizes = sizeof(sizes) / sizeof(sizes[0]);
     
     for (int size_idx = 0; size_idx < num_sizes; size_idx++) {
@@ -37,14 +37,26 @@ void performance_test(void) {
         fprintf(fp, "-------------------\n");
         
         /* 确定测试次数：500x500矩阵测试5次，其他测试20次 */
-        int num_tests = 1;
-        int num_multiply_tests = 1;
-        int num_inverse_tests = 1;
+        int num_tests = 20;
+        int num_multiply_tests = 20;
+        int num_inverse_tests = 20;
          
         /* 初始化累加器 */
         double total_add = 0.0, total_scalar = 0.0, total_transpose = 0.0, total_multiply = 0.0;
         double total_det_recursive = 0.0, total_det_gaussian = 0.0, total_det_lu = 0.0;
         double total_inv_adjugate = 0.0, total_inv_gauss_jordan = 0.0, total_inv_lu = 0.0;
+        
+        /* 创建数组存储每次测试的时间 */
+        double *times_add = (double*)malloc(num_tests * sizeof(double));
+        double *times_scalar = (double*)malloc(num_tests * sizeof(double));
+        double *times_transpose = (double*)malloc(num_tests * sizeof(double));
+        double *times_multiply = (double*)malloc(num_multiply_tests * sizeof(double));
+        double *times_det_recursive = (n < 50) ? (double*)malloc(num_tests * sizeof(double)) : NULL;
+        double *times_det_gaussian = (double*)malloc(num_tests * sizeof(double));
+        double *times_det_lu = (double*)malloc(num_tests * sizeof(double));
+        double *times_inv_adjugate = (n < 50) ? (double*)malloc(num_inverse_tests * sizeof(double)) : NULL;
+        double *times_inv_gauss_jordan = (double*)malloc(num_inverse_tests * sizeof(double));
+        double *times_inv_lu = (double*)malloc(num_inverse_tests * sizeof(double));
         
         for (int test = 0; test < num_tests; test++) {
             MEMSTACK ms;
@@ -79,6 +91,8 @@ void performance_test(void) {
             end = clock();
             cpu_time = ((double)(end - start)) / CLOCKS_PER_SEC;
             total_add += cpu_time;
+            times_add[test] = cpu_time;
+            printf("  第 %d 次 - 矩阵加法: %.4f 秒\n", test + 1, cpu_time);
             
             /* 测试矩阵标量乘法 */
             start = clock();
@@ -87,6 +101,8 @@ void performance_test(void) {
             end = clock();
             cpu_time = ((double)(end - start)) / CLOCKS_PER_SEC;
             total_scalar += cpu_time;
+            times_scalar[test] = cpu_time;
+            printf("  第 %d 次 - 矩阵标量乘法: %.4f 秒\n", test + 1, cpu_time);
             
             /* 测试矩阵转置 */
             start = clock();
@@ -95,6 +111,8 @@ void performance_test(void) {
             end = clock();
             cpu_time = ((double)(end - start)) / CLOCKS_PER_SEC;
             total_transpose += cpu_time;
+            times_transpose[test] = cpu_time;
+            printf("  第 %d 次 - 矩阵转置: %.4f 秒\n", test + 1, cpu_time);
             
             /* 测试矩阵乘法（根据矩阵大小决定测试次数） */
             if (test < num_multiply_tests) {
@@ -104,6 +122,8 @@ void performance_test(void) {
                 end = clock();
                 cpu_time = ((double)(end - start)) / CLOCKS_PER_SEC;
                 total_multiply += cpu_time;
+                times_multiply[test] = cpu_time;
+                printf("  第 %d 次 - 矩阵乘法: %.4f 秒\n", test + 1, cpu_time);
             }
             
             /* 测试行列式计算 */
@@ -114,6 +134,8 @@ void performance_test(void) {
                 end = clock();
                 cpu_time = ((double)(end - start)) / CLOCKS_PER_SEC;
                 total_det_recursive += cpu_time;
+                times_det_recursive[test] = cpu_time;
+                printf("  第 %d 次 - 行列式计算-递归展开法: %.4f 秒\n", test + 1, cpu_time);
             }
             
             REAL det_gaussian = 0.0;
@@ -122,6 +144,8 @@ void performance_test(void) {
             end = clock();
             cpu_time = ((double)(end - start)) / CLOCKS_PER_SEC;
             total_det_gaussian += cpu_time;
+            times_det_gaussian[test] = cpu_time;
+            printf("  第 %d 次 - 行列式计算-高斯消元法: %.4f 秒\n", test + 1, cpu_time);
             
             REAL det_lu = 0.0;
             start = clock();
@@ -129,6 +153,8 @@ void performance_test(void) {
             end = clock();
             cpu_time = ((double)(end - start)) / CLOCKS_PER_SEC;
             total_det_lu += cpu_time;
+            times_det_lu[test] = cpu_time;
+            printf("  第 %d 次 - 行列式计算-LU分解法: %.4f 秒\n", test + 1, cpu_time);
             
             /* 测试逆矩阵计算（只测试较小的矩阵） */
             if (test < num_inverse_tests) {
@@ -140,6 +166,8 @@ void performance_test(void) {
                     end = clock();
                     cpu_time = ((double)(end - start)) / CLOCKS_PER_SEC;
                     total_inv_adjugate += cpu_time;
+                    times_inv_adjugate[test] = cpu_time;
+                    printf("  第 %d 次 - 逆矩阵计算-伴随矩阵法: %.4f 秒\n", test + 1, cpu_time);
                 }
                 
                 /* 测试Gauss-Jordan消元法 */
@@ -149,6 +177,8 @@ void performance_test(void) {
                 end = clock();
                 cpu_time = ((double)(end - start)) / CLOCKS_PER_SEC;
                 total_inv_gauss_jordan += cpu_time;
+                times_inv_gauss_jordan[test] = cpu_time;
+                printf("  第 %d 次 - 逆矩阵计算-Gauss-Jordan消元法: %.4f 秒\n", test + 1, cpu_time);
                 
                 /* 测试LU分解法 */
                 start = clock();
@@ -157,6 +187,8 @@ void performance_test(void) {
                 end = clock();
                 cpu_time = ((double)(end - start)) / CLOCKS_PER_SEC;
                 total_inv_lu += cpu_time;
+                times_inv_lu[test] = cpu_time;
+                printf("  第 %d 次 - 逆矩阵计算-LU分解法: %.4f 秒\n", test + 1, cpu_time);
             }
             
             memstack_free_all(&ms);
@@ -218,6 +250,162 @@ void performance_test(void) {
         fprintf(fp, "LU分解法: %.4f 秒 (测试 %d 次)\n", avg_inv_lu, num_inverse_tests);
         
         fprintf(fp, "\n");
+        
+        /* 输出每次测试的时间数组 */
+        printf("\n详细测试时间数组:\n");
+        fprintf(fp, "\n详细测试时间数组:\n");
+        
+        /* 输出矩阵加法时间数组 */
+        printf("矩阵加法: [");
+        fprintf(fp, "矩阵加法: [");
+        for (int i = 0; i < num_tests; i++) {
+            printf("%.4f", times_add[i]);
+            fprintf(fp, "%.4f", times_add[i]);
+            if (i < num_tests - 1) {
+                printf(", ");
+                fprintf(fp, ", ");
+            }
+        }
+        printf("]\n");
+        fprintf(fp, "]\n");
+        
+        /* 输出矩阵标量乘法时间数组 */
+        printf("矩阵标量乘法: [");
+        fprintf(fp, "矩阵标量乘法: [");
+        for (int i = 0; i < num_tests; i++) {
+            printf("%.4f", times_scalar[i]);
+            fprintf(fp, "%.4f", times_scalar[i]);
+            if (i < num_tests - 1) {
+                printf(", ");
+                fprintf(fp, ", ");
+            }
+        }
+        printf("]\n");
+        fprintf(fp, "]\n");
+        
+        /* 输出矩阵转置时间数组 */
+        printf("矩阵转置: [");
+        fprintf(fp, "矩阵转置: [");
+        for (int i = 0; i < num_tests; i++) {
+            printf("%.4f", times_transpose[i]);
+            fprintf(fp, "%.4f", times_transpose[i]);
+            if (i < num_tests - 1) {
+                printf(", ");
+                fprintf(fp, ", ");
+            }
+        }
+        printf("]\n");
+        fprintf(fp, "]\n");
+        
+        /* 输出矩阵乘法时间数组 */
+        printf("矩阵乘法: [");
+        fprintf(fp, "矩阵乘法: [");
+        for (int i = 0; i < num_multiply_tests; i++) {
+            printf("%.4f", times_multiply[i]);
+            fprintf(fp, "%.4f", times_multiply[i]);
+            if (i < num_multiply_tests - 1) {
+                printf(", ");
+                fprintf(fp, ", ");
+            }
+        }
+        printf("]\n");
+        fprintf(fp, "]\n");
+        
+        /* 输出行列式计算时间数组 */
+        if (n < 50 && times_det_recursive) {
+            printf("行列式计算-递归展开法: [");
+            fprintf(fp, "行列式计算-递归展开法: [");
+            for (int i = 0; i < num_tests; i++) {
+                printf("%.4f", times_det_recursive[i]);
+                fprintf(fp, "%.4f", times_det_recursive[i]);
+                if (i < num_tests - 1) {
+                    printf(", ");
+                    fprintf(fp, ", ");
+                }
+            }
+            printf("]\n");
+            fprintf(fp, "]\n");
+        }
+        
+        printf("行列式计算-高斯消元法: [");
+        fprintf(fp, "行列式计算-高斯消元法: [");
+        for (int i = 0; i < num_tests; i++) {
+            printf("%.4f", times_det_gaussian[i]);
+            fprintf(fp, "%.4f", times_det_gaussian[i]);
+            if (i < num_tests - 1) {
+                printf(", ");
+                fprintf(fp, ", ");
+            }
+        }
+        printf("]\n");
+        fprintf(fp, "]\n");
+        
+        printf("行列式计算-LU分解法: [");
+        fprintf(fp, "行列式计算-LU分解法: [");
+        for (int i = 0; i < num_tests; i++) {
+            printf("%.4f", times_det_lu[i]);
+            fprintf(fp, "%.4f", times_det_lu[i]);
+            if (i < num_tests - 1) {
+                printf(", ");
+                fprintf(fp, ", ");
+            }
+        }
+        printf("]\n");
+        fprintf(fp, "]\n");
+        
+        /* 输出逆矩阵计算时间数组 */
+        if (n < 50 && times_inv_adjugate) {
+            printf("逆矩阵计算-伴随矩阵法: [");
+            fprintf(fp, "逆矩阵计算-伴随矩阵法: [");
+            for (int i = 0; i < num_inverse_tests; i++) {
+                printf("%.4f", times_inv_adjugate[i]);
+                fprintf(fp, "%.4f", times_inv_adjugate[i]);
+                if (i < num_inverse_tests - 1) {
+                    printf(", ");
+                    fprintf(fp, ", ");
+                }
+            }
+            printf("]\n");
+            fprintf(fp, "]\n");
+        }
+        
+        printf("逆矩阵计算-Gauss-Jordan消元法: [");
+        fprintf(fp, "逆矩阵计算-Gauss-Jordan消元法: [");
+        for (int i = 0; i < num_inverse_tests; i++) {
+            printf("%.4f", times_inv_gauss_jordan[i]);
+            fprintf(fp, "%.4f", times_inv_gauss_jordan[i]);
+            if (i < num_inverse_tests - 1) {
+                printf(", ");
+                fprintf(fp, ", ");
+            }
+        }
+        printf("]\n");
+        fprintf(fp, "]\n");
+        
+        printf("逆矩阵计算-LU分解法: [");
+        fprintf(fp, "逆矩阵计算-LU分解法: [");
+        for (int i = 0; i < num_inverse_tests; i++) {
+            printf("%.4f", times_inv_lu[i]);
+            fprintf(fp, "%.4f", times_inv_lu[i]);
+            if (i < num_inverse_tests - 1) {
+                printf(", ");
+                fprintf(fp, ", ");
+            }
+        }
+        printf("]\n");
+        fprintf(fp, "]\n");
+        
+        /* 释放内存 */
+        free(times_add);
+        free(times_scalar);
+        free(times_transpose);
+        free(times_multiply);
+        if (times_det_recursive) free(times_det_recursive);
+        free(times_det_gaussian);
+        free(times_det_lu);
+        if (times_inv_adjugate) free(times_inv_adjugate);
+        free(times_inv_gauss_jordan);
+        free(times_inv_lu);
     }
     
     fclose(fp);
