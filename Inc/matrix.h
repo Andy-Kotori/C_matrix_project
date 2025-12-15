@@ -161,12 +161,42 @@ ERROR_ID matrix_determinant_lu(_IN MATRIX *A, _OUT REAL *det);
 ERROR_ID matrix_adjugate(_IN MATRIX *A, _OUT MATRIX **adj, MEMSTACK *ms);
 
 /**
- * @brief 计算逆矩阵
+ * @brief 计算逆矩阵（伴随矩阵法）
  * @param A 方阵
  * @param inv 逆矩阵指针的指针
  * @param ms 内存栈指针
  * @return 错误码
- * @details 使用公式 A^{-1} = adj(A) / det(A)
+ * @details 使用公式 A^{-1} = adj(A) / det(A)，采用优化的递归行列式计算
+ */
+ERROR_ID matrix_inverse_adjugate(_IN MATRIX *A, _OUT MATRIX **inv, MEMSTACK *ms);
+
+/**
+ * @brief 计算逆矩阵（Gauss-Jordan消元法）
+ * @param A 方阵
+ * @param inv 逆矩阵指针的指针
+ * @param ms 内存栈指针
+ * @return 错误码
+ * @details 通过增广矩阵[A|I]进行行变换得到[I|A^{-1}]，使用循环展开优化
+ */
+ERROR_ID matrix_inverse_gauss_jordan(_IN MATRIX *A, _OUT MATRIX **inv, MEMSTACK *ms);
+
+/**
+ * @brief 计算逆矩阵（LU分解法）
+ * @param A 方阵
+ * @param inv 逆矩阵指针的指针
+ * @param ms 内存栈指针
+ * @return 错误码
+ * @details 先进行LU分解，然后求解线性方程组得到逆矩阵，利用现有LU优化
+ */
+ERROR_ID matrix_inverse_lu(_IN MATRIX *A, _OUT MATRIX **inv, MEMSTACK *ms);
+
+/**
+ * @brief 计算逆矩阵（兼容接口，使用伴随矩阵法）
+ * @param A 方阵
+ * @param inv 逆矩阵指针的指针
+ * @param ms 内存栈指针
+ * @return 错误码
+ * @details 保持向后兼容，调用matrix_inverse_adjugate
  */
 ERROR_ID matrix_inverse(_IN MATRIX *A, _OUT MATRIX **inv, MEMSTACK *ms);
 

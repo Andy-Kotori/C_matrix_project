@@ -34,15 +34,17 @@ void performance_test(void) {
         size_t n = sizes[size_idx];
         printf("\n测试 %zux%zu 矩阵...\n", n, n);
         fprintf(fp, "矩阵大小: %zux%zu\n", n, n);
-        fprintf(fp, "-------------------\n"); 
+        fprintf(fp, "-------------------\n");
         
         /* 确定测试次数：500x500矩阵测试5次，其他测试20次 */
         int num_tests = 1;
         int num_multiply_tests = 1;
+        int num_inverse_tests = 1;
          
         /* 初始化累加器 */
         double total_add = 0.0, total_scalar = 0.0, total_transpose = 0.0, total_multiply = 0.0;
         double total_det_recursive = 0.0, total_det_gaussian = 0.0, total_det_lu = 0.0;
+        double total_inv_adjugate = 0.0, total_inv_gauss_jordan = 0.0, total_inv_lu = 0.0;
         
         for (int test = 0; test < num_tests; test++) {
             MEMSTACK ms;
@@ -104,14 +106,15 @@ void performance_test(void) {
                 total_multiply += cpu_time;
             }
             
-            /* 测试行列式计算（只测试较小的矩阵，因为递归方法复杂度较高） */
-            // if (n <= 50) {  /* 只测试50x50及以下的矩阵 */
-            // REAL det_recursive = 0.0;
-            // start = clock();
-            // e = matrix_determinant_recursive(A, &det_recursive);
-            // end = clock();
-            // cpu_time = ((double)(end - start)) / CLOCKS_PER_SEC;
-            // total_det_recursive += cpu_time;
+            /* 测试行列式计算 */
+            REAL det_recursive = 0.0;
+            if (n < 50) {  /* 只测试50x50及以下的矩阵 */
+                start = clock();
+                e = matrix_determinant_recursive(A, &det_recursive);
+                end = clock();
+                cpu_time = ((double)(end - start)) / CLOCKS_PER_SEC;
+                total_det_recursive += cpu_time;
+            }
             
             REAL det_gaussian = 0.0;
             start = clock();
@@ -126,7 +129,35 @@ void performance_test(void) {
             end = clock();
             cpu_time = ((double)(end - start)) / CLOCKS_PER_SEC;
             total_det_lu += cpu_time;
-            // }
+            
+            /* 测试逆矩阵计算（只测试较小的矩阵） */
+            if (test < num_inverse_tests) {
+                /* 测试伴随矩阵法 */
+                if (n < 50) {  /* 只测试50x50及以下的矩阵 */
+                    start = clock();
+                    MATRIX *inv_adjugate = NULL;
+                    e = matrix_inverse_adjugate(A, &inv_adjugate, &ms);
+                    end = clock();
+                    cpu_time = ((double)(end - start)) / CLOCKS_PER_SEC;
+                    total_inv_adjugate += cpu_time;
+                }
+                
+                /* 测试Gauss-Jordan消元法 */
+                start = clock();
+                MATRIX *inv_gauss_jordan = NULL;
+                e = matrix_inverse_gauss_jordan(A, &inv_gauss_jordan, &ms);
+                end = clock();
+                cpu_time = ((double)(end - start)) / CLOCKS_PER_SEC;
+                total_inv_gauss_jordan += cpu_time;
+                
+                /* 测试LU分解法 */
+                start = clock();
+                MATRIX *inv_lu = NULL;
+                e = matrix_inverse_lu(A, &inv_lu, &ms);
+                end = clock();
+                cpu_time = ((double)(end - start)) / CLOCKS_PER_SEC;
+                total_inv_lu += cpu_time;
+            }
             
             memstack_free_all(&ms);
         }
@@ -148,20 +179,43 @@ void performance_test(void) {
         fprintf(fp, "矩阵转置: %.4f 秒 (测试 %d 次)\n", avg_transpose, num_tests);
         fprintf(fp, "矩阵乘法: %.4f 秒 (测试 %d 次)\n", avg_multiply, num_multiply_tests);
         
-        /* 打印行列式计算结果（只针对小矩阵） */
-        // if (n <= 50) {
-        double avg_det_recursive = total_det_recursive / num_tests;
+        /* 打印行列式计算结果 */
+        fprintf(fp, "\n行列式计算性能:\n");
+        if (n <= 50) {
+            double avg_det_recursive = total_det_recursive / num_tests;
+            printf("行列式计算-递归展开法 (平均): %.4f 秒\n", avg_det_recursive);
+            fprintf(fp, "递归展开法: %.4f 秒 (测试 %d 次)\n", avg_det_recursive, num_tests);
+        } else {
+            fprintf(fp, "递归展开法: 未测试 (矩阵过大)\n");
+        }
+        
         double avg_det_gaussian = total_det_gaussian / num_tests;
         double avg_det_lu = total_det_lu / num_tests;
         
-        printf("行列式计算-递归展开法 (平均): %.4f 秒\n", avg_det_recursive);
         printf("行列式计算-高斯消元法 (平均): %.4f 秒\n", avg_det_gaussian);
         printf("行列式计算-LU分解法 (平均): %.4f 秒\n", avg_det_lu);
         
-        fprintf(fp, "行列式计算-递归展开法: %.4f 秒 (测试 %d 次)\n", avg_det_recursive, num_tests);
-        fprintf(fp, "行列式计算-高斯消元法: %.4f 秒 (测试 %d 次)\n", avg_det_gaussian, num_tests);
-        fprintf(fp, "行列式计算-LU分解法: %.4f 秒 (测试 %d 次)\n", avg_det_lu, num_tests);
-        // }
+        fprintf(fp, "高斯消元法: %.4f 秒 (测试 %d 次)\n", avg_det_gaussian, num_tests);
+        fprintf(fp, "LU分解法: %.4f 秒 (测试 %d 次)\n", avg_det_lu, num_tests);
+        
+        /* 打印逆矩阵计算结果 */
+        fprintf(fp, "\n逆矩阵计算性能:\n");
+        if (n <= 50) {
+            double avg_inv_adjugate = total_inv_adjugate / num_inverse_tests;
+            printf("逆矩阵计算-伴随矩阵法 (平均): %.4f 秒\n", avg_inv_adjugate);
+            fprintf(fp, "伴随矩阵法: %.4f 秒 (测试 %d 次)\n", avg_inv_adjugate, num_inverse_tests);
+        } else {
+            fprintf(fp, "伴随矩阵法: 未测试 (矩阵过大)\n");
+        }
+        
+        double avg_inv_gauss_jordan = total_inv_gauss_jordan / num_inverse_tests;
+        double avg_inv_lu = total_inv_lu / num_inverse_tests;
+        
+        printf("逆矩阵计算-Gauss-Jordan消元法 (平均): %.4f 秒\n", avg_inv_gauss_jordan);
+        printf("逆矩阵计算-LU分解法 (平均): %.4f 秒\n", avg_inv_lu);
+        
+        fprintf(fp, "Gauss-Jordan消元法: %.4f 秒 (测试 %d 次)\n", avg_inv_gauss_jordan, num_inverse_tests);
+        fprintf(fp, "LU分解法: %.4f 秒 (测试 %d 次)\n", avg_inv_lu, num_inverse_tests);
         
         fprintf(fp, "\n");
     }

@@ -719,24 +719,29 @@ ERROR_ID matrix_adjugate(_IN MATRIX *A, _OUT MATRIX **adj, MEMSTACK *ms) {
 }
 
 /**
- * @brief 计算逆矩阵
+ * @brief 计算逆矩阵（伴随矩阵法）
  * @param A 方阵
  * @param inv 逆矩阵指针的指针
  * @param ms 内存栈指针
  * @return 错误码
  * @details 使用公式 A^{-1} = adj(A) / det(A) 计算逆矩阵
- *          要求矩阵可逆（行列式不为0）
+ *          采用优化的递归行列式计算，利用循环展开和缓存优化
  */
-ERROR_ID matrix_inverse(_IN MATRIX *A, _OUT MATRIX **inv, MEMSTACK *ms) {
+ERROR_ID matrix_inverse_adjugate(_IN MATRIX *A, _OUT MATRIX **inv, MEMSTACK *ms) {
     if (!A || !inv) return ERR_INVALID_ARG;
     if (A->rows != A->cols) return ERR_DIM_MISMATCH;
+    
+    /* 使用优化的递归行列式计算 */
     REAL det = 0.0;
-    ERROR_ID e = matrix_determinant(A, &det);
+    ERROR_ID e = matrix_determinant_recursive(A, &det);
     if (e != ERR_OK) return e;
     if (det == 0.0) return ERR_NOT_INVERTIBLE;
+    
+    /* 计算伴随矩阵 */
     MATRIX *adj = NULL;
     e = matrix_adjugate(A, &adj, ms);
     if (e != ERR_OK) return e;
+    
     /* inv = adj / det */
     MATRIX *R = NULL;
     e = matrix_scalar_mul(adj, 1.0 / det, &R, ms);
@@ -744,7 +749,314 @@ ERROR_ID matrix_inverse(_IN MATRIX *A, _OUT MATRIX **inv, MEMSTACK *ms) {
         matrix_free(adj, ms);
         return e;
     }
-    /* adj may have been registered in ms; user should be aware duplicates */
+    
     *inv = R;
     return ERR_OK;
+}
+
+/**
+ * @brief 计算逆矩阵（Gauss-Jordan消元法）
+ * @param A 方阵
+ * @param inv 逆矩阵指针的指针
+ * @param ms 内存栈指针
+ * @return 错误码
+ * @details 通过增广矩阵[A|I]进行行变换得到[I|A^{-1}]
+ *          使用循环展开优化，提高计算效率
+ */
+ERROR_ID matrix_inverse_gauss_jordan(_IN MATRIX *A, _OUT MATRIX **inv, MEMSTACK *ms) {
+    if (!A || !inv) return ERR_INVALID_ARG;
+    if (A->rows != A->cols) return ERR_DIM_MISMATCH;
+    size_t n = A->rows;
+    
+    MEMSTACK local_ms;
+    memstack_init(&local_ms);
+    
+    /* 创建增广矩阵 [A|I] */
+    MATRIX *M = matrix_create(n, 2 * n, NULL, &local_ms);
+    if (!M) { memstack_free_all(&local_ms); return ERR_OOM; }
+    
+    /* 复制A到左半部分，I到右半部分 */
+    size_t total_elements = n * n;
+    size_t k;
+    for (k = 0; k + 3 < total_elements; k += 4) {
+        M->data[k]   = A->data[k];
+        M->data[k+1] = A->data[k+1];
+        M->data[k+2] = A->data[k+2];
+        M->data[k+3] = A->data[k+3];
+    }
+    for (; k < total_elements; k++) {
+        M->data[k] = A->data[k];
+    }
+    
+    /* 设置右半部分为单位矩阵 */
+    for (size_t i = 0; i < n; i++) {
+        M->data[idx(M, i, n + i)] = 1.0;
+    }
+    
+    /* Gauss-Jordan消元 */
+    for (size_t i = 0; i < n; i++) {
+        /* 寻找主元 */
+        size_t max_row = i;
+        REAL max_val = M->data[idx(M, i, i)];
+        if (max_val < 0) max_val = -max_val;
+        
+        for (size_t row = i + 1; row < n; row++) {
+            REAL val = M->data[idx(M, row, i)];
+            if (val < 0) val = -val;
+            if (val > max_val) {
+                max_val = val;
+                max_row = row;
+            }
+        }
+        
+        /* 如果主元为0，矩阵不可逆 */
+        if (max_val < 1e-12) {
+            memstack_free_all(&local_ms);
+            return ERR_NOT_INVERTIBLE;
+        }
+        
+        /* 交换行（如果需要） */
+        if (max_row != i) {
+            /* 循环展开优化行交换 */
+            for (size_t col = 0; col + 3 < 2 * n; col += 4) {
+                REAL temp = M->data[idx(M, i, col)];
+                M->data[idx(M, i, col)] = M->data[idx(M, max_row, col)];
+                M->data[idx(M, max_row, col)] = temp;
+                
+                temp = M->data[idx(M, i, col+1)];
+                M->data[idx(M, i, col+1)] = M->data[idx(M, max_row, col+1)];
+                M->data[idx(M, max_row, col+1)] = temp;
+                
+                temp = M->data[idx(M, i, col+2)];
+                M->data[idx(M, i, col+2)] = M->data[idx(M, max_row, col+2)];
+                M->data[idx(M, max_row, col+2)] = temp;
+                
+                temp = M->data[idx(M, i, col+3)];
+                M->data[idx(M, i, col+3)] = M->data[idx(M, max_row, col+3)];
+                M->data[idx(M, max_row, col+3)] = temp;
+            }
+            for (size_t col = 2 * n - ((2 * n) % 4); col < 2 * n; col++) {
+                REAL temp = M->data[idx(M, i, col)];
+                M->data[idx(M, i, col)] = M->data[idx(M, max_row, col)];
+                M->data[idx(M, max_row, col)] = temp;
+            }
+        }
+        
+        /* 归一化当前行 */
+        REAL pivot = M->data[idx(M, i, i)];
+        /* 循环展开优化行归一化 */
+        for (size_t col = 0; col + 3 < 2 * n; col += 4) {
+            M->data[idx(M, i, col)]   /= pivot;
+            M->data[idx(M, i, col+1)] /= pivot;
+            M->data[idx(M, i, col+2)] /= pivot;
+            M->data[idx(M, i, col+3)] /= pivot;
+        }
+        for (size_t col = 2 * n - ((2 * n) % 4); col < 2 * n; col++) {
+            M->data[idx(M, i, col)] /= pivot;
+        }
+        
+        /* 消去其他行 */
+        for (size_t row = 0; row < n; row++) {
+            if (row == i) continue;
+            REAL factor = M->data[idx(M, row, i)];
+            if (factor != 0.0) {
+                /* 循环展开优化消元 */
+                for (size_t col = 0; col + 3 < 2 * n; col += 4) {
+                    M->data[idx(M, row, col)]   -= factor * M->data[idx(M, i, col)];
+                    M->data[idx(M, row, col+1)] -= factor * M->data[idx(M, i, col+1)];
+                    M->data[idx(M, row, col+2)] -= factor * M->data[idx(M, i, col+2)];
+                    M->data[idx(M, row, col+3)] -= factor * M->data[idx(M, i, col+3)];
+                }
+                for (size_t col = 2 * n - ((2 * n) % 4); col < 2 * n; col++) {
+                    M->data[idx(M, row, col)] -= factor * M->data[idx(M, i, col)];
+                }
+            }
+        }
+    }
+    
+    /* 提取逆矩阵（右半部分） */
+    MATRIX *R = matrix_create(n, n, NULL, ms);
+    if (!R) { memstack_free_all(&local_ms); return ERR_OOM; }
+    
+    for (size_t i = 0; i < n; i++) {
+        for (size_t j = 0; j < n; j++) {
+            R->data[idx(R, i, j)] = M->data[idx(M, i, n + j)];
+        }
+    }
+    
+    memstack_free_all(&local_ms);
+    *inv = R;
+    return ERR_OK;
+}
+
+/**
+ * @brief 计算逆矩阵（LU分解法）
+ * @param A 方阵
+ * @param inv 逆矩阵指针的指针
+ * @param ms 内存栈指针
+ * @return 错误码
+ * @details 先进行LU分解，然后求解A*X=I得到逆矩阵
+ *          利用现有的LU分解优化技术
+ */
+ERROR_ID matrix_inverse_lu(_IN MATRIX *A, _OUT MATRIX **inv, MEMSTACK *ms) {
+    if (!A || !inv) return ERR_INVALID_ARG;
+    if (A->rows != A->cols) return ERR_DIM_MISMATCH;
+    size_t n = A->rows;
+    
+    MEMSTACK local_ms;
+    memstack_init(&local_ms);
+    
+    /* 创建矩阵副本用于LU分解 */
+    MATRIX *M = matrix_create(n, n, NULL, &local_ms);
+    if (!M) { memstack_free_all(&local_ms); return ERR_OOM; }
+    
+    /* 复制矩阵数据 */
+    size_t total_elements = n * n;
+    size_t k;
+    for (k = 0; k + 3 < total_elements; k += 4) {
+        M->data[k]   = A->data[k];
+        M->data[k+1] = A->data[k+1];
+        M->data[k+2] = A->data[k+2];
+        M->data[k+3] = A->data[k+3];
+    }
+    for (; k < total_elements; k++) {
+        M->data[k] = A->data[k];
+    }
+    
+    int sign = 1; /* 记录行交换次数的奇偶性 */
+    size_t *perm = (size_t*)malloc(n * sizeof(size_t));
+    if (!perm) { memstack_free_all(&local_ms); return ERR_OOM; }
+    
+    /* 初始化排列数组 */
+    for (size_t i = 0; i < n; i++) {
+        perm[i] = i;
+    }
+    
+    /* LU分解（复用现有优化代码） */
+    for (size_t i = 0; i < n; i++) {
+        /* 寻找主元 */
+        size_t max_row = i;
+        REAL max_val = M->data[idx(M, i, i)];
+        if (max_val < 0) max_val = -max_val;
+        
+        for (size_t row = i + 1; row < n; row++) {
+            REAL val = M->data[idx(M, row, i)];
+            if (val < 0) val = -val;
+            if (val > max_val) {
+                max_val = val;
+                max_row = row;
+            }
+        }
+        
+        /* 如果主元为0，矩阵不可逆 */
+        if (max_val < 1e-12) {
+            free(perm);
+            memstack_free_all(&local_ms);
+            return ERR_NOT_INVERTIBLE;
+        }
+        
+        /* 交换行（如果需要） */
+        if (max_row != i) {
+            /* 循环展开优化行交换 */
+            for (size_t col = 0; col + 3 < n; col += 4) {
+                REAL temp = M->data[idx(M, i, col)];
+                M->data[idx(M, i, col)] = M->data[idx(M, max_row, col)];
+                M->data[idx(M, max_row, col)] = temp;
+                
+                temp = M->data[idx(M, i, col+1)];
+                M->data[idx(M, i, col+1)] = M->data[idx(M, max_row, col+1)];
+                M->data[idx(M, max_row, col+1)] = temp;
+                
+                temp = M->data[idx(M, i, col+2)];
+                M->data[idx(M, i, col+2)] = M->data[idx(M, max_row, col+2)];
+                M->data[idx(M, max_row, col+2)] = temp;
+                
+                temp = M->data[idx(M, i, col+3)];
+                M->data[idx(M, i, col+3)] = M->data[idx(M, max_row, col+3)];
+                M->data[idx(M, max_row, col+3)] = temp;
+            }
+            for (size_t col = n - (n % 4); col < n; col++) {
+                REAL temp = M->data[idx(M, i, col)];
+                M->data[idx(M, i, col)] = M->data[idx(M, max_row, col)];
+                M->data[idx(M, max_row, col)] = temp;
+            }
+            
+            /* 交换排列数组 */
+            size_t temp_perm = perm[i];
+            perm[i] = perm[max_row];
+            perm[max_row] = temp_perm;
+            
+            sign = -sign;
+        }
+        
+        /* 计算L和U矩阵 */
+        REAL pivot = M->data[idx(M, i, i)];
+        for (size_t row = i + 1; row < n; row++) {
+            REAL factor = M->data[idx(M, row, i)] / pivot;
+            M->data[idx(M, row, i)] = factor; /* 存储L矩阵元素 */
+            
+            /* 更新U矩阵元素 */
+            for (size_t col = i + 1; col + 3 < n; col += 4) {
+                M->data[idx(M, row, col)]   -= factor * M->data[idx(M, i, col)];
+                M->data[idx(M, row, col+1)] -= factor * M->data[idx(M, i, col+1)];
+                M->data[idx(M, row, col+2)] -= factor * M->data[idx(M, i, col+2)];
+                M->data[idx(M, row, col+3)] -= factor * M->data[idx(M, i, col+3)];
+            }
+            for (size_t col = n - (n % 4); col < n; col++) {
+                M->data[idx(M, row, col)] -= factor * M->data[idx(M, i, col)];
+            }
+        }
+    }
+    
+    /* 创建逆矩阵 */
+    MATRIX *R = matrix_create(n, n, NULL, ms);
+    if (!R) { free(perm); memstack_free_all(&local_ms); return ERR_OOM; }
+    
+    /* 求解线性方程组 A * X = I */
+    for (size_t col = 0; col < n; col++) {
+        /* 创建右端向量（单位矩阵的列） */
+        REAL *b = (REAL*)calloc(n, sizeof(REAL));
+        if (!b) { free(perm); memstack_free_all(&local_ms); return ERR_OOM; }
+        b[perm[col]] = 1.0; /* 考虑行交换 */
+        
+        /* 前向替换求解 Ly = b */
+        REAL *y = (REAL*)calloc(n, sizeof(REAL));
+        if (!y) { free(b); free(perm); memstack_free_all(&local_ms); return ERR_OOM; }
+        
+        for (size_t i = 0; i < n; i++) {
+            y[i] = b[i];
+            for (size_t j = 0; j < i; j++) {
+                y[i] -= M->data[idx(M, i, j)] * y[j];
+            }
+        }
+        
+        /* 后向替换求解 Ux = y */
+        for (size_t i = n; i-- > 0; ) {
+            REAL sum = y[i];
+            for (size_t j = i + 1; j < n; j++) {
+                sum -= M->data[idx(M, i, j)] * R->data[idx(R, j, col)];
+            }
+            R->data[idx(R, i, col)] = sum / M->data[idx(M, i, i)];
+        }
+        
+        free(b);
+        free(y);
+    }
+    
+    free(perm);
+    memstack_free_all(&local_ms);
+    *inv = R;
+    return ERR_OK;
+}
+
+/**
+ * @brief 计算逆矩阵（兼容接口，使用伴随矩阵法）
+ * @param A 方阵
+ * @param inv 逆矩阵指针的指针
+ * @param ms 内存栈指针
+ * @return 错误码
+ * @details 保持向后兼容，调用matrix_inverse_adjugate
+ */
+ERROR_ID matrix_inverse(_IN MATRIX *A, _OUT MATRIX **inv, MEMSTACK *ms) {
+    return matrix_inverse_adjugate(A, inv, ms);
 }
