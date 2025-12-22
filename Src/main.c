@@ -20,6 +20,17 @@ void performance_test(void) {
         return;
     }
     
+    /* 打开JSON结果文件 */
+    FILE *json_fp = fopen("results.json", "w");
+    if (!json_fp) {
+        printf("无法创建JSON结果文件 results.json\n");
+        fclose(fp);
+        return;
+    }
+    
+    /* 写入JSON文件头 */
+    fprintf(json_fp, "{\n");
+    
     fprintf(fp, "矩阵运算性能测试结果\n");
     fprintf(fp, "====================\n\n");
     fprintf(fp, "测试环境:\n");
@@ -27,7 +38,7 @@ void performance_test(void) {
     fprintf(fp, "- 测试次数: 小矩阵测试20次, 大矩阵测试5次\n");
     fprintf(fp, "- 单位: 秒 (平均值)\n\n");
     
-    size_t sizes[] = {10, 50, 100, 500};
+    size_t sizes[] = {1100, 1200, 1300, 1400, 1500, 1600, 1700, 1800, 1900, 2000};
     int num_sizes = sizeof(sizes) / sizeof(sizes[0]);
     
     for (int size_idx = 0; size_idx < num_sizes; size_idx++) {
@@ -35,6 +46,12 @@ void performance_test(void) {
         printf("\n测试 %zux%zu 矩阵...\n", n, n);
         fprintf(fp, "矩阵大小: %zux%zu\n", n, n);
         fprintf(fp, "-------------------\n");
+        
+        /* 写入JSON对象开始 */
+        if (size_idx > 0) {
+            fprintf(json_fp, ",\n");
+        }
+        fprintf(json_fp, "  \"%zux%zu\": {\n", n, n);
         
         /* 确定测试次数：500x500矩阵测试5次，其他测试20次 */
         int num_tests = 20;
@@ -51,10 +68,10 @@ void performance_test(void) {
         double *times_scalar = (double*)malloc(num_tests * sizeof(double));
         double *times_transpose = (double*)malloc(num_tests * sizeof(double));
         double *times_multiply = (double*)malloc(num_multiply_tests * sizeof(double));
-        double *times_det_recursive = (n < 50) ? (double*)malloc(num_tests * sizeof(double)) : NULL;
+        double *times_det_recursive = (n < 10 ) ? (double*)malloc(num_tests * sizeof(double)) : NULL;
         double *times_det_gaussian = (double*)malloc(num_tests * sizeof(double));
         double *times_det_lu = (double*)malloc(num_tests * sizeof(double));
-        double *times_inv_adjugate = (n < 50) ? (double*)malloc(num_inverse_tests * sizeof(double)) : NULL;
+        double *times_inv_adjugate = (n < 10 ) ? (double*)malloc(num_inverse_tests * sizeof(double)) : NULL;
         double *times_inv_gauss_jordan = (double*)malloc(num_inverse_tests * sizeof(double));
         double *times_inv_lu = (double*)malloc(num_inverse_tests * sizeof(double));
         
@@ -128,7 +145,7 @@ void performance_test(void) {
             
             /* 测试行列式计算 */
             REAL det_recursive = 0.0;
-            if (n < 50) {  /* 只测试50x50及以下的矩阵 */
+            if (n < 10 ) {  /* 只测试50x50及以下的矩阵 */
                 start = clock();
                 e = matrix_determinant_recursive(A, &det_recursive);
                 end = clock();
@@ -159,7 +176,7 @@ void performance_test(void) {
             /* 测试逆矩阵计算（只测试较小的矩阵） */
             if (test < num_inverse_tests) {
                 /* 测试伴随矩阵法 */
-                if (n < 50) {  /* 只测试50x50及以下的矩阵 */
+                if (n < 10 ) {  /* 只测试50x50及以下的矩阵 */
                     start = clock();
                     MATRIX *inv_adjugate = NULL;
                     e = matrix_inverse_adjugate(A, &inv_adjugate, &ms);
@@ -213,7 +230,7 @@ void performance_test(void) {
         
         /* 打印行列式计算结果 */
         fprintf(fp, "\n行列式计算性能:\n");
-        if (n <= 50) {
+        if (n <= 10) {
             double avg_det_recursive = total_det_recursive / num_tests;
             printf("行列式计算-递归展开法 (平均): %.4f 秒\n", avg_det_recursive);
             fprintf(fp, "递归展开法: %.4f 秒 (测试 %d 次)\n", avg_det_recursive, num_tests);
@@ -232,7 +249,7 @@ void performance_test(void) {
         
         /* 打印逆矩阵计算结果 */
         fprintf(fp, "\n逆矩阵计算性能:\n");
-        if (n <= 50) {
+        if (n <= 10) {
             double avg_inv_adjugate = total_inv_adjugate / num_inverse_tests;
             printf("逆矩阵计算-伴随矩阵法 (平均): %.4f 秒\n", avg_inv_adjugate);
             fprintf(fp, "伴随矩阵法: %.4f 秒 (测试 %d 次)\n", avg_inv_adjugate, num_inverse_tests);
@@ -250,6 +267,122 @@ void performance_test(void) {
         fprintf(fp, "LU分解法: %.4f 秒 (测试 %d 次)\n", avg_inv_lu, num_inverse_tests);
         
         fprintf(fp, "\n");
+        
+        /* 写入JSON数据 */
+        fprintf(json_fp, "    \"matrix_addition\": {\n");
+        fprintf(json_fp, "      \"average_time\": %.4f,\n", avg_add);
+        fprintf(json_fp, "      \"test_count\": %d,\n", num_tests);
+        fprintf(json_fp, "      \"times\": [");
+        for (int i = 0; i < num_tests; i++) {
+            fprintf(json_fp, "%.4f", times_add[i]);
+            if (i < num_tests - 1) fprintf(json_fp, ", ");
+        }
+        fprintf(json_fp, "]\n    },\n");
+        
+        fprintf(json_fp, "    \"matrix_scalar_multiplication\": {\n");
+        fprintf(json_fp, "      \"average_time\": %.4f,\n", avg_scalar);
+        fprintf(json_fp, "      \"test_count\": %d,\n", num_tests);
+        fprintf(json_fp, "      \"times\": [");
+        for (int i = 0; i < num_tests; i++) {
+            fprintf(json_fp, "%.4f", times_scalar[i]);
+            if (i < num_tests - 1) fprintf(json_fp, ", ");
+        }
+        fprintf(json_fp, "]\n    },\n");
+        
+        fprintf(json_fp, "    \"matrix_transpose\": {\n");
+        fprintf(json_fp, "      \"average_time\": %.4f,\n", avg_transpose);
+        fprintf(json_fp, "      \"test_count\": %d,\n", num_tests);
+        fprintf(json_fp, "      \"times\": [");
+        for (int i = 0; i < num_tests; i++) {
+            fprintf(json_fp, "%.4f", times_transpose[i]);
+            if (i < num_tests - 1) fprintf(json_fp, ", ");
+        }
+        fprintf(json_fp, "]\n    },\n");
+        
+        fprintf(json_fp, "    \"matrix_multiplication\": {\n");
+        fprintf(json_fp, "      \"average_time\": %.4f,\n", avg_multiply);
+        fprintf(json_fp, "      \"test_count\": %d,\n", num_multiply_tests);
+        fprintf(json_fp, "      \"times\": [");
+        for (int i = 0; i < num_multiply_tests; i++) {
+            fprintf(json_fp, "%.4f", times_multiply[i]);
+            if (i < num_multiply_tests - 1) fprintf(json_fp, ", ");
+        }
+        fprintf(json_fp, "]\n    },\n");
+        
+        /* 行列式计算JSON数据 */
+        fprintf(json_fp, "    \"determinant_calculation\": {\n");
+        
+        if (n <= 10 && times_det_recursive) {
+            double avg_det_recursive = total_det_recursive / num_tests;
+            fprintf(json_fp, "      \"recursive_expansion\": {\n");
+            fprintf(json_fp, "        \"average_time\": %.4f,\n", avg_det_recursive);
+            fprintf(json_fp, "        \"test_count\": %d,\n", num_tests);
+            fprintf(json_fp, "        \"times\": [");
+            for (int i = 0; i < num_tests; i++) {
+                fprintf(json_fp, "%.4f", times_det_recursive[i]);
+                if (i < num_tests - 1) fprintf(json_fp, ", ");
+            }
+            fprintf(json_fp, "]\n      },\n");
+        }
+        
+        fprintf(json_fp, "      \"gaussian_elimination\": {\n");
+        fprintf(json_fp, "        \"average_time\": %.4f,\n", avg_det_gaussian);
+        fprintf(json_fp, "        \"test_count\": %d,\n", num_tests);
+        fprintf(json_fp, "        \"times\": [");
+        for (int i = 0; i < num_tests; i++) {
+            fprintf(json_fp, "%.4f", times_det_gaussian[i]);
+            if (i < num_tests - 1) fprintf(json_fp, ", ");
+        }
+        fprintf(json_fp, "]\n      },\n");
+        
+        fprintf(json_fp, "      \"lu_decomposition\": {\n");
+        fprintf(json_fp, "        \"average_time\": %.4f,\n", avg_det_lu);
+        fprintf(json_fp, "        \"test_count\": %d,\n", num_tests);
+        fprintf(json_fp, "        \"times\": [");
+        for (int i = 0; i < num_tests; i++) {
+            fprintf(json_fp, "%.4f", times_det_lu[i]);
+            if (i < num_tests - 1) fprintf(json_fp, ", ");
+        }
+        fprintf(json_fp, "]\n      }\n    },\n");
+        
+        /* 逆矩阵计算JSON数据 */
+        fprintf(json_fp, "    \"inverse_calculation\": {\n");
+        
+        if (n <= 10 && times_inv_adjugate) {
+            double avg_inv_adjugate = total_inv_adjugate / num_inverse_tests;
+            fprintf(json_fp, "      \"adjugate_method\": {\n");
+            fprintf(json_fp, "        \"average_time\": %.4f,\n", avg_inv_adjugate);
+            fprintf(json_fp, "        \"test_count\": %d,\n", num_inverse_tests);
+            fprintf(json_fp, "        \"times\": [");
+            for (int i = 0; i < num_inverse_tests; i++) {
+                fprintf(json_fp, "%.4f", times_inv_adjugate[i]);
+                if (i < num_inverse_tests - 1) fprintf(json_fp, ", ");
+            }
+            fprintf(json_fp, "]\n      },\n");
+        }
+        
+        fprintf(json_fp, "      \"gauss_jordan_elimination\": {\n");
+        fprintf(json_fp, "        \"average_time\": %.4f,\n", avg_inv_gauss_jordan);
+        fprintf(json_fp, "        \"test_count\": %d,\n", num_inverse_tests);
+        fprintf(json_fp, "        \"times\": [");
+        for (int i = 0; i < num_inverse_tests; i++) {
+            fprintf(json_fp, "%.4f", times_inv_gauss_jordan[i]);
+            if (i < num_inverse_tests - 1) fprintf(json_fp, ", ");
+        }
+        fprintf(json_fp, "]\n      },\n");
+        
+        fprintf(json_fp, "      \"lu_decomposition\": {\n");
+        fprintf(json_fp, "        \"average_time\": %.4f,\n", avg_inv_lu);
+        fprintf(json_fp, "        \"test_count\": %d,\n", num_inverse_tests);
+        fprintf(json_fp, "        \"times\": [");
+        for (int i = 0; i < num_inverse_tests; i++) {
+            fprintf(json_fp, "%.4f", times_inv_lu[i]);
+            if (i < num_inverse_tests - 1) fprintf(json_fp, ", ");
+        }
+        fprintf(json_fp, "]\n      }\n    }\n");
+        
+        /* 写入JSON对象结束 */
+        fprintf(json_fp, "  }");
         
         /* 输出每次测试的时间数组 */
         printf("\n详细测试时间数组:\n");
@@ -312,7 +445,7 @@ void performance_test(void) {
         fprintf(fp, "]\n");
         
         /* 输出行列式计算时间数组 */
-        if (n < 50 && times_det_recursive) {
+        if (n < 10  && times_det_recursive) {
             printf("行列式计算-递归展开法: [");
             fprintf(fp, "行列式计算-递归展开法: [");
             for (int i = 0; i < num_tests; i++) {
@@ -354,7 +487,7 @@ void performance_test(void) {
         fprintf(fp, "]\n");
         
         /* 输出逆矩阵计算时间数组 */
-        if (n < 50 && times_inv_adjugate) {
+        if (n < 10  && times_inv_adjugate) {
             printf("逆矩阵计算-伴随矩阵法: [");
             fprintf(fp, "逆矩阵计算-伴随矩阵法: [");
             for (int i = 0; i < num_inverse_tests; i++) {
@@ -408,8 +541,12 @@ void performance_test(void) {
         free(times_inv_lu);
     }
     
+    /* 写入JSON文件尾 */
+    fprintf(json_fp, "\n}\n");
+    
     fclose(fp);
-    printf("\n测试结果已保存到 results.txt\n");
+    fclose(json_fp);
+    printf("\n测试结果已保存到 results.txt 和 results.json\n");
 }
 
 /* 基础功能测试 */
